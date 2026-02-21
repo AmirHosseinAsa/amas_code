@@ -20,3 +20,17 @@ Amas Code is a **terminal-based AI coding assistant** that can:
 - Checkpoint your work and undo/redo any changes
 - Work with **any AI model** — Claude, Gemini, GPT, GLM
 
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/AmirHosseinAsa/amas_code
+cd amas_code
+
+# Install in development mode
+pip install -e .
+
+# Run the agent
+amas
+```
+

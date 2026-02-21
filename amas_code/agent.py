@@ -81,7 +81,15 @@ You have full control: navigate, click, type, press keys, scroll, run JavaScript
 - Use fetch_url for lightweight pages, browser_navigate for JS-heavy pages.
 
 ## Self-Improvement
-- **save_lesson:** If you solve a tricky problem or learn a project quirk, call save_lesson to store the solution for future turns."""
+- **save_lesson:** If you solve a tricky problem or learn a project quirk, call save_lesson to store the solution for future turns.
+
+# Efficiency Rules (CRITICAL — saves tokens and money)
+- **During tool loops:** Emit ZERO explanatory text between consecutive tool calls. Just call tools silently.
+- **After batch edits:** Give ONE summary (1-3 sentences). Never list every file or repeat diffs.
+- **Never narrate what diffs show** — the user already sees tool output. Don't re-explain.
+- **Strategy:** Explain your plan ONCE before starting, not before each individual edit.
+- **Repetitive changes** (e.g., renaming a variable across files): Do them all silently, summarize at end.
+- **Short responses by default.** If the change is self-explanatory from the diff, just say "Done." or similar."""
 
 
 # Slash commands with descriptions
@@ -185,6 +193,7 @@ class Agent:
         self._lessons: dict[str, str] = {}
         self._apply_api_key()
         self._load_intelligence()
+        self._load_project_map()  # Auto-load saved project map if available
         self._rebuild_system_prompt()
         self.session: PromptSession | None = None  # Lazy — created on first interactive use
         tools.init(self.config)
@@ -209,6 +218,25 @@ class Agent:
             ui.success(f"Loaded {len(self._skills)} skill(s): {', '.join(self._skills.keys())}")
         if self._lessons:
             ui.success(f"Loaded {len(self._lessons)} learned lesson(s)")
+
+    def _load_project_map(self) -> None:
+        """Auto-load AMAS.md and project map if previously generated."""
+        parts = []
+        amas_path = Path(".amas/AMAS.md")
+        if amas_path.exists():
+            try:
+                parts.append(f"## Project Identity\n{amas_path.read_text(encoding='utf-8')}")
+            except Exception:
+                pass
+        map_path = Path(".amas/project_map.md")
+        if map_path.exists():
+            try:
+                parts.append(map_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        if parts:
+            self.project_context = "\n\n".join(parts)
+            ui.dim(f"Loaded cached project context ({len(self.project_context)} chars)")
 
     def _rebuild_system_prompt(self, extra_context: str = "") -> None:
         """Build system prompt from base + project context + rules + skills."""
@@ -366,10 +394,29 @@ class Agent:
         return False
 
     def _handle_init(self) -> None:
-        """Scan project and inject context into system prompt."""
-        self.project_context = skills.init_project(".", self.config)
+        """Scan project, generate smart summary + AMAS.md, and inject context."""
+        map_path = Path(".amas/project_map.md")
+        map_path.parent.mkdir(exist_ok=True)
+
+        # Generate AMAS.md project identity (LLM-powered)
+        ui.info("Generating project identity (AMAS.md)...")
+        amas_md = skills.generate_amas_md(".", self.config)
+        if amas_md:
+            Path(".amas/AMAS.md").write_text(amas_md, encoding="utf-8")
+            ui.success("Project identity saved to [cyan].amas/AMAS.md[/]")
+
+        # Generate file/symbol map
+        summary = skills.generate_project_summary(".", self.config)
+        map_path.write_text(summary, encoding="utf-8")
+
+        # Basic file listing
+        basic = skills.init_project(".", self.config)
+
+        # Combine all for context
+        prefix = f"## Project Identity\n{amas_md}\n\n" if amas_md else ""
+        self.project_context = f"{prefix}{summary}\n\n## File Structure\n{basic}"
         self._rebuild_system_prompt()
-        ui.success("Project context injected into system prompt.")
+        ui.success("Project scanned. Summary saved to [cyan].amas/project_map.md[/] and [cyan].amas/AMAS.md[/]")
 
     def _handle_compact(self) -> None:
         """Summarize conversation to reduce context size."""
